@@ -404,6 +404,31 @@ function AddTaskInline({
   const [notify, setNotify] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
 
+  async function onTimeChange(next: string) {
+    setTime(next);
+    if (!next) {
+      setNotify(false);
+      return;
+    }
+    // Time just appeared — turn the bell on by default and ask for permission
+    // so the user doesn't forget to enable it (and the task is saved with
+    // notify:false by default otherwise, which is the most common bug here).
+    if (notify) return;
+    setNotify(true);
+    setHint(null);
+    const res = await requestPermission();
+    if (res !== "granted") {
+      setNotify(false);
+      if (res === "denied") {
+        setHint("Notifications blocked — task saved without reminder.");
+      } else if (res === "unsupported") {
+        setHint("This browser doesn't support notifications.");
+      } else {
+        setHint("Permission not granted — task saved without reminder.");
+      }
+    }
+  }
+
   async function submit() {
     if (!value.trim()) return;
     const cleanTime = time.trim();
@@ -458,16 +483,16 @@ function AddTaskInline({
         <Input
           type="time"
           value={time}
-          onChange={(e) => {
-            setTime(e.target.value);
-            if (!e.target.value) setNotify(false);
-          }}
+          onChange={(e) => onTimeChange(e.target.value)}
           className="h-9 w-32"
           title="Optional time"
         />
         <Button
           size="icon"
-          variant={notify ? "default" : "ghost"}
+          variant={notify ? "default" : "outline"}
+          className={cn(
+            !notify && !!time && "border-amber-500/40 text-amber-400 hover:text-amber-300",
+          )}
           onClick={() => {
             if (!time) return; // can't enable without time
             setNotify((v) => !v);

@@ -155,7 +155,11 @@ export function Dashboard({
               />
             )}
             {tab === "progress" && (
-              <ProgressCharts tasks={state.tasks} words={state.words} />
+              <ProgressCharts
+                tasks={state.tasks}
+                words={state.words}
+                progress={state.progress}
+              />
             )}
             {tab === "words" && (
               <VocabularyPanel

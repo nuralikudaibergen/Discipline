@@ -22,6 +22,9 @@ export function yesterdayKey(d: Date = new Date()): string {
 // ---- Storage keys ---------------------------------------------------------
 const STORAGE_KEY = "nurali:state:v1";
 
+/** Bump whenever SEED_WORDS changes; loadState uses it to swap stale seeds. */
+const CURRENT_SEED_VERSION = 2;
+
 function makeId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -45,7 +48,7 @@ const SEED_TASK_TITLES: { day: number; title: string }[] = [
   { day: 6, title: "Reset for next week" },
 ];
 
-function buildInitialState(): AppState {
+function buildInitialState(): AppState & { seedVersion: number } {
   const now = Date.now();
   return {
     words: SEED_WORDS.map((w, i) => ({
@@ -66,6 +69,7 @@ function buildInitialState(): AppState {
     progress: [],
     streak: 0,
     lastTestDate: null,
+    seedVersion: CURRENT_SEED_VERSION,
   };
 }
 
@@ -93,6 +97,38 @@ export function loadState(): AppState {
     // bank is empty.
     for (const w of parsed.words) {
       if (w.userAdded === undefined) w.userAdded = true;
+    }
+    // Migration: replace legacy seed word sets with the current SEED_WORDS.
+    // We version the seed via a `seedVersion` marker on the state itself —
+    // when the marker is missing or stale we drop the existing seed entries
+    // and install the current SEED_WORDS. User-added words are preserved.
+    const storedVersion = (parsed as { seedVersion?: number }).seedVersion;
+    if (storedVersion !== CURRENT_SEED_VERSION) {
+      const now2 = Date.now();
+      const seedEntries = parsed.words.filter((w) => w.userAdded === false);
+      const userEntries = parsed.words.filter((w) => w.userAdded !== false);
+      const freshSeeds: Word[] = SEED_WORDS.map((w, i) => ({
+        id: makeId(),
+        en: w.en,
+        ru: w.ru,
+        createdAt: now2 - (SEED_WORDS.length - i) * 1000,
+        userAdded: false,
+      }));
+      // Dedupe against user entries (case-insensitive on `en`) so the user
+      // doesn't get a duplicate "nuance" if they happened to add one
+      // themselves before the swap.
+      const userEns = new Set(userEntries.map((w) => w.en.toLowerCase()));
+      const newSeed = freshSeeds.filter((s) => !userEns.has(s.en));
+      parsed.words = [...userEntries, ...newSeed];
+      (parsed as { seedVersion?: number }).seedVersion = CURRENT_SEED_VERSION;
+      // If we had a stale seed block, log so it's clear the swap happened.
+      if (seedEntries.length > 0) {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[Nurali] Refreshed seed: ${seedEntries.length} → ${newSeed.length} words.`,
+        );
+      }
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
     }
     // Backfill: older stored states may have an empty task list. Don't
     // stomp on a real user's plan — only seed if they have none yet.
